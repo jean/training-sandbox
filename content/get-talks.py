@@ -2,20 +2,17 @@ import csv
 import lxml.html
 import requests
 import re
+import unicodedata
 
 Plone = 'Plone2/'
 
-def slugify(string):
-    """
-    Slugify a unicode string.
-    Example:
-        >>> slugify(u"Héllø Wörld")
-        u"hello-world"
-    """
-
-    return re.sub(r'[-\s]+', '-',
-                re.sub(r'[^\w\s-]', '', string)
-                .strip().lower())
+def slugify(s):
+    slug = unicodedata.normalize('NFKD', s)
+    # slug = slug.encode('ascii', 'ignore').lower()
+    slug = slug.lower()
+    slug = re.sub(r'[^a-z0-9]+', '-', slug).strip('-')
+    slug = re.sub(r'[-]+', '-', slug)
+    return slug
 
 schedule = {}
 speakers = {}
@@ -97,8 +94,9 @@ with open('schedule.csv', 'w') as csv_out:
     location_names = set()
 
     for day in [7,8,9]:
-        page = requests.get('https://2018.ploneconf.org/schedule/talks-november-%s' % day)
-        doc = lxml.html.fromstring(page.content)
+        page = requests.get('https://2018.ploneconf.org/schedule/talks-november-%s' % day).content
+        # page = open('pages/talks-november-%s' % day, 'r').read()
+        doc = lxml.html.fromstring(page)
         div = doc.get_element_by_id('parent-fieldname-text')
         table = div[1]
         thead = table[0]
@@ -113,7 +111,12 @@ with open('schedule.csv', 'w') as csv_out:
         for tr in tbody:
             th = tr[0]
             row = {n: '' for n in headers}
-            row['start'], row['end'] = th.text_content().split(' - ')
+            times = th.text_content()
+            if ' - ' in times:
+                row['start'], row['end'] = times.split(' - ')
+            else:
+                row['start'] = times
+                row['end'] = ''
 
             count = 0
             for td in tr.iter('td'):
@@ -123,7 +126,8 @@ with open('schedule.csv', 'w') as csv_out:
                 if location not in location_names:
                     row['@type'] = 'location'
                     row['title'] = row['location'] = location
-                    row['path'] = Plone + 'conference/locations/' + slugify(row['location'])
+                    row['id'] = slugify(location)
+                    row['path'] = Plone + 'conference/locations/'
                     csv_writer.writerow(row)
                     location_names.add(location)
 
@@ -142,7 +146,8 @@ with open('schedule.csv', 'w') as csv_out:
                     row['@type'] = 'session'
                     row['title'] = title.text_content()
                     print(title.text_content())
-                    row['path'] = Plone + 'conference/locations/' + slugify(row['location']) + '/' + slugify(row['title'])
+                    row['id'] = slugify(row['title'])
+                    row['path'] = Plone + 'conference/locations/' + slugify(location) + '/'
                     csv_writer.writerow(row)
 
                     if ps:
@@ -173,7 +178,8 @@ with open('schedule.csv', 'w') as csv_out:
                         row['first_name'], row['last_name'] = speaker
                         fullname = ' '.join([row['first_name'], row['last_name']])
                         row['title'] = fullname
-                        row['path'] = Plone + slugify(fullname)
+                        row['id'] = slugify(fullname)
+                        row['path'] = Plone + 'conference/speakers/' 
                         csv_writer.writerow(row)
 
                     # print(row)
